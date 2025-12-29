@@ -2,11 +2,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 class ApiService {
   private baseURL: string;
-  private token: string | null = null;
 
   constructor() {
     this.baseURL = API_BASE_URL;
-    this.token = localStorage.getItem("authToken");
+  }
+
+  // Método para obtener el token del localStorage
+  private getToken(): string | null {
+    return localStorage.getItem("authToken");
   }
 
   private async request<T>(
@@ -21,9 +24,22 @@ class ApiService {
       ...(options.headers as Record<string, string>),
     };
 
-    // Solo agregar Authorization header si se requiere autenticación
-    if (requiresAuth && this.token) {
-      headers.Authorization = `Bearer ${this.token}`;
+    // Agregar Authorization header si se requiere autenticación
+    if (requiresAuth) {
+      const token = this.getToken();
+
+      // Debug: Log para verificar token
+      console.log("🔐 Auth Required:", requiresAuth);
+      console.log("🔑 Token Present:", !!token);
+      console.log("📍 Endpoint:", endpoint);
+
+      if (!token) {
+        console.error("❌ No token found in localStorage");
+        throw new Error("No authentication token found. Please login again.");
+      }
+
+      headers.Authorization = `Bearer ${token}`;
+      console.log("✅ Authorization header added");
     }
 
     const config: RequestInit = {
@@ -32,46 +48,61 @@ class ApiService {
     };
 
     try {
+      console.log("🚀 Making request to:", url);
       const response = await fetch(url, config);
 
       if (response.status === 401) {
+        console.error("❌ 401 Unauthorized - Token may be invalid or expired");
         this.handleUnauthorized();
-        throw new Error("Unauthorized");
+        throw new Error("Unauthorized - Please login again");
+      }
+
+      if (response.status === 403) {
+        console.error("❌ 403 Forbidden - Insufficient permissions");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Error details:", errorData);
+        throw new Error(
+          errorData.message || "Access forbidden - Insufficient permissions"
+        );
       }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error("❌ HTTP Error:", response.status, errorData);
         throw new Error(
           errorData.message || `HTTP error! status: ${response.status}`
         );
       }
 
+      console.log("✅ Request successful");
       return await response.json();
     } catch (error) {
-      console.error("API request failed:", error);
+      console.error("💥 API request failed:", error);
       throw error;
     }
   }
 
   private handleUnauthorized() {
+    console.log(
+      "🔓 Handling unauthorized - Clearing auth data and redirecting"
+    );
     localStorage.removeItem("authToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
-    this.token = null;
     window.location.href = "/login";
   }
 
   setAuthToken(token: string) {
-    this.token = token;
+    console.log("🔐 Setting auth token");
     localStorage.setItem("authToken", token);
   }
 
   getAuthToken(): string | null {
-    return this.token || localStorage.getItem("authToken");
+    return this.getToken();
   }
 
   clearAuthToken() {
-    this.token = null;
+    console.log("🔓 Clearing auth token");
     localStorage.removeItem("authToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
@@ -83,11 +114,19 @@ class ApiService {
   }
 
   // POST request
-  async post<T>(endpoint: string, data?: any): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: "POST",
-      body: data ? JSON.stringify(data) : undefined,
-    });
+  async post<T>(
+    endpoint: string,
+    data?: any,
+    requiresAuth: boolean = true
+  ): Promise<T> {
+    return this.request<T>(
+      endpoint,
+      {
+        method: "POST",
+        body: data ? JSON.stringify(data) : undefined,
+      },
+      requiresAuth
+    );
   }
 
   // PUT request

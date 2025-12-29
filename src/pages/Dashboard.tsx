@@ -10,17 +10,19 @@ import {
   CheckCircle,
   Clock,
   RefreshCw,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react";
 import { useAuthContext } from "../contexts/AuthContext";
 import { cedulaService } from "../services/cedulaService";
-import { paymentService } from "../services/paymentService";
+import { paymentService, TokenPackage } from "../services/paymentService";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Card } from "../components/ui/Card";
 import { Modal } from "../components/ui/Modal";
 import { LoadingSpinner } from "../components/common/LoadingSpinner";
 import { formatDate } from "../utils/formatters";
-import type { CedulaQuery, CedulaResult } from "../types";
+import type { CedulaQuery } from "../types";
 
 // Function to render photo with fallback and crop to hide watermark
 const renderPhoto = (foto: string | undefined) => {
@@ -33,7 +35,6 @@ const renderPhoto = (foto: string | undefined) => {
     );
   }
 
-  // Combinar con dominio oficial si la URL es relativa o contiene 'localhost'
   let fotoUrl = foto;
   if (!/^https?:\/\//i.test(foto) || foto.includes("localhost")) {
     fotoUrl = `https://dataportal.jce.gob.do${
@@ -47,7 +48,7 @@ const renderPhoto = (foto: string | undefined) => {
         className="mx-auto mb-2 overflow-hidden rounded-lg shadow-md"
         style={{
           maxWidth: "200px",
-          maxHeight: "230px", // Reducimos un poco la altura para ocultar la marca de agua
+          maxHeight: "230px",
         }}
       >
         <img
@@ -56,7 +57,7 @@ const renderPhoto = (foto: string | undefined) => {
           className="w-full h-full"
           style={{
             objectFit: "cover",
-            objectPosition: "top center", // Mostrar solo la parte superior
+            objectPosition: "top center",
           }}
           onError={(e) => {
             e.currentTarget.style.display = "none";
@@ -87,6 +88,33 @@ export const Dashboard: React.FC = () => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
+
+  // Estados para paquetes de tokens
+  const [tokenPackages, setTokenPackages] = useState<TokenPackage[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+
+  // Cargar paquetes de tokens al montar el componente o abrir el modal
+  useEffect(() => {
+    if (showPaymentModal && tokenPackages.length === 0) {
+      loadTokenPackages();
+    }
+  }, [showPaymentModal]);
+
+  const loadTokenPackages = async () => {
+    setLoadingPackages(true);
+    try {
+      const packages = await paymentService.getTokenPackages();
+      setTokenPackages(packages);
+    } catch (error) {
+      console.error("Error loading token packages:", error);
+      setErrors({
+        ...errors,
+        packages: "Error cargando paquetes de tokens",
+      });
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === "history") {
@@ -135,10 +163,8 @@ export const Dashboard: React.FC = () => {
       setQueryResult(result);
       setShowResultModal(true);
 
-      // Refresh user data to update token count
       await refreshUserData();
 
-      // Refresh history if on history tab
       if (activeTab === "history") {
         loadQueryHistory();
       }
@@ -153,11 +179,20 @@ export const Dashboard: React.FC = () => {
 
   const handleBuyTokens = async (tokens: number) => {
     try {
+      setErrors({});
       const paymentOrder = await paymentService.createPaymentOrder(tokens);
       window.open(paymentOrder.buyMeCoffeeUrl, "_blank");
       setShowPaymentModal(false);
+
+      // Mostrar mensaje de confirmación
+      alert(`Orden de pago creada exitosamente. 
+      
+Por favor completa el pago en Buy Me a Coffee para activar tus ${tokens} tokens.`);
     } catch (error: any) {
-      setErrors({ payment: error.message || "Error al crear orden de pago" });
+      console.error("Error creating payment order:", error);
+      setErrors({
+        payment: error.message || "Error al crear orden de pago",
+      });
     }
   };
 
@@ -173,8 +208,6 @@ export const Dashboard: React.FC = () => {
         return <RefreshCw className="w-5 h-5 text-gray-500" />;
     }
   };
-
-  const tokenPackages = paymentService.getTokenPackages();
 
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
@@ -375,50 +408,105 @@ export const Dashboard: React.FC = () => {
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
           title="Comprar Tokens"
-          size="md"
+          size="lg"
         >
           <div className="space-y-6">
             <div className="text-center">
-              <p className="text-gray-600 mb-4">
+              <p className="text-gray-600 mb-2">
                 Necesitas tokens para realizar consultas. Selecciona un paquete:
+              </p>
+              <p className="text-sm text-gray-500">
+                Los tokens se activarán automáticamente después del pago
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {tokenPackages.map((pkg) => (
-                <div
-                  key={pkg.tokens}
-                  className={`border-2 rounded-lg p-4 cursor-pointer transition-all hover:shadow-md ${
-                    pkg.popular
-                      ? "border-blue-500 bg-blue-50 relative"
-                      : "border-gray-200 hover:border-blue-300"
-                  }`}
-                  onClick={() => handleBuyTokens(pkg.tokens)}
+            {loadingPackages ? (
+              <div className="py-12">
+                <LoadingSpinner />
+                <p className="text-center text-gray-500 mt-4">
+                  Cargando paquetes de tokens...
+                </p>
+              </div>
+            ) : errors.packages ? (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-600 text-center">{errors.packages}</p>
+                <Button
+                  onClick={loadTokenPackages}
+                  variant="outline"
+                  className="w-full mt-4"
                 >
-                  {pkg.popular && (
-                    <div className="absolute -top-2 left-1/2 transform -translate-x-1/2">
-                      <span className="bg-blue-500 text-white px-3 py-1 text-xs rounded-full">
-                        Popular
-                      </span>
+                  Reintentar
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tokenPackages.map((pkg) => (
+                  <div
+                    key={pkg.tokens}
+                    className={`relative border-2 rounded-lg p-6 cursor-pointer transition-all hover:shadow-lg ${
+                      pkg.popular
+                        ? "border-blue-500 bg-blue-50 ring-2 ring-blue-400"
+                        : "border-gray-200 hover:border-blue-300"
+                    }`}
+                    onClick={() => handleBuyTokens(pkg.tokens)}
+                  >
+                    {pkg.popular && (
+                      <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                        <span className="bg-blue-500 text-white px-4 py-1 text-xs font-bold rounded-full shadow-lg">
+                          MÁS POPULAR
+                        </span>
+                      </div>
+                    )}
+
+                    {pkg.discount && pkg.discount > 0 && (
+                      <div className="absolute -top-3 -right-3">
+                        <div className="bg-green-500 text-white w-12 h-12 rounded-full flex items-center justify-center font-bold shadow-lg">
+                          <span className="text-xs">-{pkg.discount}%</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-center">
+                      <div className="mb-3">
+                        <CreditCard className="w-10 h-10 text-blue-500 mx-auto" />
+                      </div>
+
+                      <div className="text-4xl font-bold text-gray-900 mb-2">
+                        {pkg.tokens}
+                      </div>
+                      <div className="text-sm text-gray-600 mb-4">
+                        Token{pkg.tokens !== 1 ? "s" : ""}
+                      </div>
+
+                      <div className="mb-4">
+                        <div className="text-3xl font-bold text-blue-600">
+                          {paymentService.formatPrice(pkg.totalPrice)}
+                        </div>
+                        {pkg.discount && pkg.discount > 0 && (
+                          <div className="text-sm text-gray-500 line-through mt-1">
+                            {paymentService.formatPrice(
+                              tokenPackages[0].price * pkg.tokens
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-gray-500 mb-4">
+                        {paymentService.formatPrice(pkg.price)} por token
+                      </div>
+
+                      <Button
+                        variant={pkg.popular ? "primary" : "outline"}
+                        className="w-full"
+                      >
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        Comprar Ahora
+                      </Button>
                     </div>
-                  )}
-                  <div className="text-center">
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">
-                      {pkg.tokens} Token{pkg.tokens !== 1 ? "s" : ""}
-                    </h3>
-                    <p className="text-2xl font-bold text-blue-600 mb-3">
-                      ${pkg.price}
-                    </p>
-                    <Button
-                      variant={pkg.popular ? "primary" : "outline"}
-                      className="w-full"
-                    >
-                      Comprar Ahora
-                    </Button>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {errors.payment && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-3">
@@ -426,6 +514,19 @@ export const Dashboard: React.FC = () => {
                 <p className="text-red-600 text-sm">{errors.payment}</p>
               </div>
             )}
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-semibold text-gray-900 mb-2 flex items-center">
+                <TrendingUp className="w-4 h-4 mr-2 text-blue-500" />
+                ¿Por qué comprar más tokens?
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>✅ Obtén descuentos de hasta 25%</li>
+                <li>✅ Los tokens nunca expiran</li>
+                <li>✅ Activación automática después del pago</li>
+                <li>✅ Cada consulta cuesta solo 1 token</li>
+              </ul>
+            </div>
           </div>
         </Modal>
 
@@ -461,7 +562,6 @@ export const Dashboard: React.FC = () => {
                     Información Encontrada
                   </h4>
 
-                  {/* Foto arriba de todo */}
                   {queryResult.result.foto && (
                     <div className="mb-6">
                       <p className="text-sm font-medium text-gray-700 mb-2">

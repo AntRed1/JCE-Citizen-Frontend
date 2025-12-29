@@ -191,27 +191,12 @@ class AdminService {
   // ================= APP SETTINGS CONTROLLER ENDPOINTS =================
 
   /**
-   * Obtener configuraciones públicas (usando endpoint público)
+   * Obtener configuraciones públicas (usando endpoint público sin autenticación)
    */
   async getPublicSettings(): Promise<AppSettings> {
-    // Intentar primero el endpoint público sin autenticación
-    try {
-      const response = await apiService.get<ApiResponse<AppSettings>>(
-        "/settings/public",
-        false // sin autenticación
-      );
-
-      if (response.success) {
-        return response.data;
-      }
-    } catch (error) {
-      // Si falla, usar endpoint admin
-      console.warn("Public endpoint failed, trying admin endpoint");
-    }
-
-    // Fallback al endpoint admin
     const response = await apiService.get<ApiResponse<AppSettings>>(
-      "/admin/settings"
+      "/settings/public",
+      false // sin autenticación - endpoint público
     );
 
     if (response.success) {
